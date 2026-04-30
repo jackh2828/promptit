@@ -166,8 +166,8 @@ class ShareViewController: UIViewController {
 
         // Build a character set that is safe for use as a query-parameter VALUE.
         // .urlQueryAllowed permits &, =, ?, +, and # unencoded; those characters
-        // would split or corrupt the outer `url=` parameter when Linking.parse()
-        // processes `promptit://share?url=<value>` in the main app. Social media
+        // would split or corrupt the outer \`url=\` parameter when Linking.parse()
+        // processes \`promptit://share?url=<value>\` in the main app. Social media
         // URLs routinely contain query strings (TikTok, Instagram, X all do).
         var valueCharset = CharacterSet.urlQueryAllowed
         valueCharset.remove(charactersIn: "&=+?#;")
