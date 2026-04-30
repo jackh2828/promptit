@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.promptit.app",
+      "bundleIdentifier": "com.jackhenick.promptit",
       "buildNumber": "1"
     },
     "android": {
