@@ -1,0 +1,488 @@
+/**
+ * Expo config plugin — iOS Share Extension
+ *
+ * Wires a native Share Extension target into the managed-workflow Xcode project
+ * so users can tap Share → PromptIt in TikTok / Instagram / etc.
+ *
+ * Flow: extension captures URL → validates it → opens promptit://share?url=<encoded>
+ *       → main app's Linking listener navigates to the Save tab with URL pre-filled.
+ *
+ * Runs automatically during: expo prebuild  |  eas build
+ */
+
+const { withXcodeProject, withDangerousMod } = require('@expo/config-plugins');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const EXTENSION_NAME = 'ShareExtension';
+const DEPLOYMENT_TARGET = '16.0';
+
+// ─── Embedded Swift source ───────────────────────────────────────────────────
+// Kept in sync with ios/ShareExtension/ShareViewController.swift.
+// Embedded here so EAS Build can recreate the file without needing the
+// gitignored ios/ directory to be committed.
+
+// NOTE: keep this in sync with ios/ShareExtension/ShareViewController.swift.
+// The standalone file is the source of truth; this copy is what EAS Build writes
+// during expo prebuild (the ios/ directory is gitignored).
+const SWIFT_SOURCE = `\
+import UIKit
+import UniformTypeIdentifiers
+
+class ShareViewController: UIViewController {
+
+    private let appScheme = "promptit"
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var didComplete = false  // guards against double-complete if timeout races a finish
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+        startTimeout()
+        extractURL()
+    }
+
+    // MARK: – UI
+
+    private func setupUI() {
+        view.backgroundColor = UIColor(red: 0.031, green: 0.031, blue: 0.059, alpha: 0.95)
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.color = UIColor(red: 0.486, green: 0.435, blue: 1.0, alpha: 1)
+        spinner.startAnimating()
+
+        let label = UILabel()
+        label.text = "Opening PromptIt…"
+        label.textColor = UIColor(red: 0.94, green: 0.93, blue: 1.0, alpha: 1)
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
+
+        stack.addArrangedSubview(spinner)
+        stack.addArrangedSubview(label)
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+    }
+
+    // MARK: – Timeout
+
+    // If the item provider hangs the extension will never appear frozen — it
+    // auto-cancels after 8 seconds with a clean error.
+    private func startTimeout() {
+        let item = DispatchWorkItem { [weak self] in
+            self?.completeWithError(code: -3, message: "Timed out waiting for shared item.")
+        }
+        timeoutWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: item)
+    }
+
+    private func cancelTimeout() {
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+    }
+
+    // MARK: – URL extraction
+
+    private func extractURL() {
+        guard
+            let item = extensionContext?.inputItems.first as? NSExtensionItem,
+            let attachments = item.attachments,
+            !attachments.isEmpty
+        else {
+            completeWithError(code: -1, message: "No shareable item found.")
+            return
+        }
+
+        let urlType  = UTType.url.identifier
+        let textType = UTType.plainText.identifier
+
+        // Scan all attachments: prefer a URL type, fall back to plain text.
+        // Checking only the first attachment misses cases where the URL is not
+        // the first item (e.g. some apps prepend a thumbnail image attachment).
+        var urlProvider: NSItemProvider? = nil
+        var textProvider: NSItemProvider? = nil
+
+        for provider in attachments {
+            if urlProvider == nil && provider.hasItemConformingToTypeIdentifier(urlType) {
+                urlProvider = provider
+            }
+            if textProvider == nil && provider.hasItemConformingToTypeIdentifier(textType) {
+                textProvider = provider
+            }
+        }
+
+        if let provider = urlProvider {
+            provider.loadItem(forTypeIdentifier: urlType, options: nil) { [weak self] item, error in
+                // Swift 5.0-compatible explicit binding (not the 5.7 shorthand).
+                if let error = error { NSLog("[ShareExtension] loadItem error: \\(error)") }
+                let urlString: String?
+                switch item {
+                case let url as URL:    urlString = url.absoluteString
+                case let str as String: urlString = str
+                default:               urlString = nil
+                }
+                DispatchQueue.main.async {
+                    if let s = urlString { self?.openInApp(urlString: s) }
+                    else { self?.completeWithError(code: -1, message: "Could not read URL from shared item.") }
+                }
+            }
+        } else if let provider = textProvider {
+            // Fallback: some apps share the URL as plain text instead of a URL type.
+            provider.loadItem(forTypeIdentifier: textType, options: nil) { [weak self] item, _ in
+                DispatchQueue.main.async {
+                    if let s = item as? String { self?.openInApp(urlString: s) }
+                    else { self?.completeWithError(code: -1, message: "Could not read text from shared item.") }
+                }
+            }
+        } else {
+            completeWithError(code: -2, message: "Shared item type is not supported.")
+        }
+    }
+
+    // MARK: – Open main app
+
+    private func openInApp(urlString: String) {
+        // Validate before forwarding — prevents captions / hashtags / garbage text
+        // from reaching the edge function.
+        guard
+            let parsed = URL(string: urlString),
+            let scheme = parsed.scheme,
+            scheme == "http" || scheme == "https"
+        else {
+            completeWithError(code: -4, message: "The shared text doesn't contain a valid URL.")
+            return
+        }
+
+        // Build a character set that is safe for use as a query-parameter VALUE.
+        // .urlQueryAllowed permits &, =, ?, +, and # unencoded; those characters
+        // would split or corrupt the outer `url=` parameter when Linking.parse()
+        // processes `promptit://share?url=<value>` in the main app. Social media
+        // URLs routinely contain query strings (TikTok, Instagram, X all do).
+        var valueCharset = CharacterSet.urlQueryAllowed
+        valueCharset.remove(charactersIn: "&=+?#;")
+
+        guard
+            let encoded = parsed.absoluteString.addingPercentEncoding(
+                withAllowedCharacters: valueCharset
+            ),
+            let appURL = URL(string: "\\(appScheme)://share?url=\\(encoded)")
+        else {
+            completeWithError(code: -1, message: "Failed to build app URL.")
+            return
+        }
+
+        cancelTimeout()
+
+        extensionContext?.open(appURL) { [weak self] success in
+            guard let self = self else { return }
+            if success {
+                self.finish()
+            } else {
+                // Returned false — URL scheme not registered (app deleted / bundle ID changed).
+                self.completeWithError(code: -5, message: "PromptIt could not be opened.")
+            }
+        }
+    }
+
+    // MARK: – Completion helpers
+
+    private func finish() {
+        guard !didComplete else { return }
+        didComplete = true
+        extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+    }
+
+    private func completeWithError(code: Int, message: String) {
+        guard !didComplete else { return }
+        didComplete = true
+        cancelTimeout()
+        let error = NSError(
+            domain: Bundle.main.bundleIdentifier ?? "com.promptit.app.ShareExtension",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+        extensionContext?.cancelRequest(withError: error)
+    }
+}
+`;
+
+const INFO_PLIST = `\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>NSExtension</key>
+\t<dict>
+\t\t<key>NSExtensionAttributes</key>
+\t\t<dict>
+\t\t\t<key>NSExtensionActivationRule</key>
+\t\t\t<dict>
+\t\t\t\t<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+\t\t\t\t<integer>1</integer>
+\t\t\t</dict>
+\t\t</dict>
+\t\t<key>NSExtensionPointIdentifier</key>
+\t\t<string>com.apple.share-services</string>
+\t\t<key>NSExtensionPrincipalClass</key>
+\t\t<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+\t</dict>
+</dict>
+</plist>
+`;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Cryptographically random 24-char uppercase hex string matching the Xcode
+// UUID format. Math.random() would be fine in practice but crypto eliminates
+// any theoretical collision risk across multiple prebuild runs.
+function generateUUID() {
+  return crypto.randomBytes(12).toString('hex').toUpperCase();
+}
+
+function quoted(str) {
+  return `"${str}"`;
+}
+
+// ─── Step 1: Write extension source files during prebuild ─────────────────────
+
+function writeExtensionFiles(projectRoot) {
+  const dir = path.join(projectRoot, 'ios', EXTENSION_NAME);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'ShareViewController.swift'), SWIFT_SOURCE, 'utf8');
+  fs.writeFileSync(path.join(dir, 'Info.plist'), INFO_PLIST, 'utf8');
+}
+
+// ─── Step 2: Add extension target to the Xcode project ───────────────────────
+
+// Find the main application target reliably by product type rather than by
+// dict-key order (getFirstTarget() is order-dependent and fragile).
+function findMainAppTarget(project, extensionTargetUuid) {
+  const targets = project.pbxNativeTargetSection();
+  for (const [key, target] of Object.entries(targets)) {
+    if (key.endsWith('_comment') || typeof target !== 'object') continue;
+    if (key === extensionTargetUuid) continue;
+    const pt = target.productType;
+    if (
+      pt === '"com.apple.product-type.application"' ||
+      pt === 'com.apple.product-type.application'
+    ) {
+      return { uuid: key, pbxNativeTarget: target };
+    }
+  }
+  // Fallback: original getFirstTarget (pre-filtered for non-extension)
+  return project.getFirstTarget();
+}
+
+function addShareExtensionToProject(project, bundleId) {
+  // Guard: idempotent — skip if the extension target was already added.
+  const nativeTargets = project.pbxNativeTargetSection();
+  const alreadyExists = Object.values(nativeTargets).some(
+    (t) => typeof t === 'object' && t.name === EXTENSION_NAME
+  );
+  if (alreadyExists) return;
+
+  const extBundleId = `${bundleId}.ShareExtension`;
+
+  // addTarget creates: PBXNativeTarget, PBXBuildConfiguration (Debug + Release),
+  // PBXXCConfigurationList, empty build phases (Sources, Resources, Frameworks),
+  // a PBXGroup, and a product PBXFileReference for the .appex product.
+  const extTarget = project.addTarget(
+    EXTENSION_NAME,
+    'app_extension',
+    EXTENSION_NAME,
+    extBundleId
+  );
+
+  if (!extTarget?.uuid) {
+    throw new Error('[withShareExtension] addTarget() did not return a valid target.');
+  }
+
+  // ── Locate the PBXGroup that addTarget created ────────────────────────────
+  const pbxGroups = project.hash.project.objects['PBXGroup'] || {};
+  let extGroupKey = null;
+  for (const [key, group] of Object.entries(pbxGroups)) {
+    if (key.endsWith('_comment') || typeof group !== 'object') continue;
+    if (group.name === EXTENSION_NAME || group.path === EXTENSION_NAME) {
+      extGroupKey = key;
+      break;
+    }
+  }
+
+  // ── Add ShareViewController.swift to the Sources build phase ─────────────
+  const swiftOpts = { target: extTarget.uuid, lastKnownFileType: 'sourcecode.swift' };
+  if (extGroupKey) {
+    project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts, extGroupKey);
+  } else {
+    project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts);
+  }
+
+  // ── Add Info.plist as a file reference in the group ONLY ─────────────────
+  // Do NOT use addResourceFile — for app extensions, Info.plist is processed
+  // at build time via the INFOPLIST_FILE build setting, not via Copy Bundle
+  // Resources. Adding it as a resource creates a duplicate processing step
+  // that Xcode warns about.
+  const plistRefUuid = generateUUID();
+  const fileRefs = project.hash.project.objects['PBXFileReference'] || {};
+  fileRefs[plistRefUuid] = {
+    isa: 'PBXFileReference',
+    lastKnownFileType: 'text.plist.xml',
+    path: '"Info.plist"',
+    sourceTree: '"<group>"',
+  };
+  fileRefs[`${plistRefUuid}_comment`] = 'Info.plist';
+
+  if (extGroupKey && pbxGroups[extGroupKey]) {
+    const group = pbxGroups[extGroupKey];
+    if (!Array.isArray(group.children)) group.children = [];
+    group.children.push({ value: plistRefUuid, comment: 'Info.plist' });
+  }
+
+  // ── Patch build settings for Debug and Release ────────────────────────────
+  const configurations = project.pbxXCBuildConfigurationSection();
+  for (const [, buildConfig] of Object.entries(configurations)) {
+    if (typeof buildConfig !== 'object' || !buildConfig.buildSettings) continue;
+    const s = buildConfig.buildSettings;
+
+    const isExtConfig =
+      s.PRODUCT_NAME === quoted(EXTENSION_NAME) || s.PRODUCT_NAME === EXTENSION_NAME;
+    if (!isExtConfig) continue;
+
+    s.SWIFT_VERSION = quoted('5.0');
+    s.IPHONEOS_DEPLOYMENT_TARGET = DEPLOYMENT_TARGET;
+    s.TARGETED_DEVICE_FAMILY = quoted('1');
+    s.INFOPLIST_FILE = quoted(`${EXTENSION_NAME}/Info.plist`);
+    s.PRODUCT_BUNDLE_IDENTIFIER = quoted(extBundleId);
+    s.SKIP_INSTALL = 'YES';
+    s.CODE_SIGN_STYLE = quoted('Automatic');
+    s.SWIFT_EMIT_LOC_STRINGS = 'YES';
+    // Extensions must not embed Swift stdlib — the main app already does it.
+    // Embedding in both causes binary size bloat and potential signing errors.
+    s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
+    // Compile-time check: catch any accidental use of non-extension-safe APIs
+    // (e.g. UIApplication.shared). Our extension only uses UIKit + extensionContext.
+    s.APPLICATION_EXTENSION_API_ONLY = 'YES';
+    delete s.CODE_SIGN_ENTITLEMENTS; // extension needs no special entitlements
+  }
+
+  // ── Find the main app target reliably ─────────────────────────────────────
+  const mainTarget = findMainAppTarget(project, extTarget.uuid);
+  if (!mainTarget?.uuid) {
+    throw new Error('[withShareExtension] Could not find the main application target.');
+  }
+
+  // ── Retrieve the extension product file reference (.appex) ───────────────
+  const extNativeTargetObj = project.pbxNativeTargetSection()[extTarget.uuid];
+  const extProductRefUuid = extNativeTargetObj?.productReference;
+  if (!extProductRefUuid) {
+    throw new Error('[withShareExtension] Extension target has no productReference.');
+  }
+
+  // ── Create PBXBuildFile pointing to the .appex product ───────────────────
+  const buildFileUuid = generateUUID();
+  const buildFileComment = `${EXTENSION_NAME}.appex in Embed App Extensions`;
+  // Guard: PBXBuildFile section should always exist in a valid Expo project,
+  // but the || {} ensures we never throw on an unusual project layout.
+  if (!project.hash.project.objects['PBXBuildFile']) {
+    project.hash.project.objects['PBXBuildFile'] = {};
+  }
+  const buildFiles = project.hash.project.objects['PBXBuildFile'];
+  buildFiles[buildFileUuid] = {
+    isa: 'PBXBuildFile',
+    fileRef: extProductRefUuid,
+    fileRef_comment: `${EXTENSION_NAME}.appex`,
+    settings: { ATTRIBUTES: ['RemoveHeadersOnCopy'] },
+  };
+  buildFiles[`${buildFileUuid}_comment`] = buildFileComment;
+
+  // ── Create "Embed App Extensions" PBXCopyFilesBuildPhase ─────────────────
+  // dstSubfolderSpec 13 = PlugIns (the slot Xcode uses for app extensions)
+  const embedPhaseUuid = generateUUID();
+  const embedPhaseComment = 'Embed App Extensions';
+  const copyFilesPhases = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
+  project.hash.project.objects['PBXCopyFilesBuildPhase'] = copyFilesPhases;
+
+  copyFilesPhases[embedPhaseUuid] = {
+    isa: 'PBXCopyFilesBuildPhase',
+    buildActionMask: 2147483647,
+    dstPath: quoted(''),
+    dstSubfolderSpec: 13,
+    files: [{ value: buildFileUuid, comment: buildFileComment }],
+    name: quoted(embedPhaseComment),
+    runOnlyForDeploymentPostprocessing: 0,
+  };
+  copyFilesPhases[`${embedPhaseUuid}_comment`] = embedPhaseComment;
+
+  // Attach embed phase to the main app target
+  const mainTargetObj = project.pbxNativeTargetSection()[mainTarget.uuid];
+  if (mainTargetObj && Array.isArray(mainTargetObj.buildPhases)) {
+    mainTargetObj.buildPhases.push({ value: embedPhaseUuid, comment: embedPhaseComment });
+  }
+
+  // ── Make the extension a build dependency of the main target ─────────────
+  // Ensures the extension is compiled before the main app links.
+  const dependencyUuid = generateUUID();
+  const proxyUuid = generateUUID();
+
+  const proxies = project.hash.project.objects['PBXContainerItemProxy'] || {};
+  project.hash.project.objects['PBXContainerItemProxy'] = proxies;
+  proxies[proxyUuid] = {
+    isa: 'PBXContainerItemProxy',
+    containerPortal: project.hash.project.rootObject,
+    containerPortal_comment: 'Project object',
+    proxyType: 1,
+    remoteGlobalIDString: extTarget.uuid,
+    remoteInfo: quoted(EXTENSION_NAME),
+  };
+
+  const deps = project.hash.project.objects['PBXTargetDependency'] || {};
+  project.hash.project.objects['PBXTargetDependency'] = deps;
+  deps[dependencyUuid] = {
+    isa: 'PBXTargetDependency',
+    name: quoted(EXTENSION_NAME),
+    target: extTarget.uuid,
+    target_comment: EXTENSION_NAME,
+    targetProxy: proxyUuid,
+    targetProxy_comment: 'PBXContainerItemProxy',
+  };
+  deps[`${dependencyUuid}_comment`] = 'PBXTargetDependency';
+
+  if (mainTargetObj && Array.isArray(mainTargetObj.dependencies)) {
+    mainTargetObj.dependencies.push({ value: dependencyUuid, comment: 'PBXTargetDependency' });
+  }
+}
+
+// ─── Plugin export ────────────────────────────────────────────────────────────
+
+module.exports = function withShareExtension(config) {
+  // Phase 1 – write Swift + plist files into ios/ShareExtension/
+  config = withDangerousMod(config, [
+    'ios',
+    (cfg) => {
+      writeExtensionFiles(cfg.modRequest.projectRoot);
+      return cfg;
+    },
+  ]);
+
+  // Phase 2 – modify the generated Xcode project
+  config = withXcodeProject(config, (cfg) => {
+    const bundleId =
+      cfg.ios?.bundleIdentifier ??
+      cfg.modRequest?.config?.ios?.bundleIdentifier ??
+      'com.promptit.app';
+    addShareExtensionToProject(cfg.modResults, bundleId);
+    return cfg;
+  });
+
+  return config;
+};
