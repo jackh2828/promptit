@@ -1,4 +1,5 @@
-﻿import React, { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +33,8 @@ function detectPlatform(url: string): string {
 }
 
 export default function SavePromptScreen() {
+  const params = useLocalSearchParams<{ url?: string }>();
+
   const [mode, setMode] = useState<Mode>('url');
   const [sourceUrl, setSourceUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -41,8 +44,34 @@ export default function SavePromptScreen() {
   const [saving, setSaving] = useState(false);
   const [extractError, setExtractError] = useState('');
 
-  async function extractFromUrl() {
-    if (!sourceUrl.trim()) {
+  // Ref-based guards — don't cause re-renders.
+  const handledIncomingUrl = useRef<string | null>(null); // prevents double-fire
+  const mountedRef = useRef(true);                         // guards async state updates
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // ── Handle URL from the share extension (promptit://share?url=…) ──────────
+  // No setTimeout needed — useEffect fires after mount, the component is ready.
+  // No router.setParams — the handledIncomingUrl ref is the sole guard against
+  // re-triggering; mutating route params can cause unexpected navigations.
+  useEffect(() => {
+    const incoming = params.url;
+    if (
+      typeof incoming === 'string' &&
+      incoming.length > 0 &&
+      handledIncomingUrl.current !== incoming
+    ) {
+      handledIncomingUrl.current = incoming;
+      setSourceUrl(incoming);
+      runExtraction(incoming);
+    }
+  }, [params.url]);
+
+  // ── Core extraction ────────────────────────────────────────────────────────
+  async function runExtraction(urlToExtract: string) {
+    if (!urlToExtract.trim()) {
       setExtractError('Paste a URL first.');
       return;
     }
@@ -50,17 +79,24 @@ export default function SavePromptScreen() {
     setMode('extracting');
     try {
       const { data, error } = await supabase.functions.invoke('extract-prompt', {
-        body: { url: sourceUrl.trim() },
+        body: { url: urlToExtract.trim() },
       });
+      if (!mountedRef.current) return; // user navigated away — discard result
       if (error) throw error;
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
-      setPlatform(data.platform ?? detectPlatform(sourceUrl));
+      setPlatform(data.platform ?? detectPlatform(urlToExtract));
       setMode('review');
-    } catch (e: any) {
+    } catch {
+      if (!mountedRef.current) return;
       setExtractError('Could not extract a prompt from that URL. Try entering it manually.');
       setMode('url');
     }
+  }
+
+  // ── Manual "Extract" button ────────────────────────────────────────────────
+  async function extractFromUrl() {
+    await runExtraction(sourceUrl);
   }
 
   async function savePrompt() {
@@ -98,7 +134,10 @@ export default function SavePromptScreen() {
     setTitle('');
     setContent('');
     setPlatform('');
-    setIsPublic(false);
+    setIsPublic(true);
+    handledIncomingUrl.current = null;
+    // Do NOT touch mountedRef here — it reflects component lifecycle, not
+    // user actions. Only the cleanup effect should ever set it to false.
   }
 
   if (mode === 'extracting') {
