@@ -1,5 +1,6 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
+import LoadingScreen from './components/LoadingScreen';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
@@ -134,7 +135,7 @@ export default function RootLayout() {
     router.navigate(`/(tabs)/save?url=${encodeURIComponent(url)}` as any);
   }, [pendingShareUrl, session, hasUsername, loading]);
 
-  if (loading) return null;
+  if (loading) return <LoadingScreen />;
 
   return (
     <ThemeProvider value={DarkTheme}>
