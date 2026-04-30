@@ -208,7 +208,7 @@ class ShareViewController: UIViewController {
         didComplete = true
         cancelTimeout()
         let error = NSError(
-            domain: Bundle.main.bundleIdentifier ?? "com.promptit.app.ShareExtension",
+            domain: Bundle.main.bundleIdentifier ?? "com.jackhenick.promptit.ShareExtension",
             code: code,
             userInfo: [NSLocalizedDescriptionKey: message]
         )
@@ -479,7 +479,7 @@ module.exports = function withShareExtension(config) {
     const bundleId =
       cfg.ios?.bundleIdentifier ??
       cfg.modRequest?.config?.ios?.bundleIdentifier ??
-      'com.promptit.app';
+      'com.jackhenick.promptit';
     addShareExtensionToProject(cfg.modResults, bundleId);
     return cfg;
   });
