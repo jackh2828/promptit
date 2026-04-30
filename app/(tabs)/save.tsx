@@ -16,12 +16,13 @@ import { supabase } from '../../lib/supabase';
 
 type Mode = 'url' | 'extracting' | 'review' | 'manual';
 
-const PLATFORMS = ['TikTok', 'Instagram', 'X/Twitter', 'Reddit'];
+const PLATFORMS = ['TikTok', 'Instagram', 'X/Twitter', 'Reddit', 'YouTube'];
 const PLATFORM_COLORS: Record<string, string> = {
   TikTok: '#FF0050',
   Instagram: '#C13584',
   'X/Twitter': '#1DA1F2',
   Reddit: '#FF4500',
+  YouTube: '#FF0000',
 };
 
 function detectPlatform(url: string): string {
