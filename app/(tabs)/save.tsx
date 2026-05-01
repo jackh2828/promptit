@@ -28,6 +28,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 function detectPlatform(url: string): string {
   if (url.includes('tiktok.com')) return 'TikTok';
   if (url.includes('instagram.com')) return 'Instagram';
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube';
   if (url.includes('twitter.com') || url.includes('x.com')) return 'X/Twitter';
   if (url.includes('reddit.com')) return 'Reddit';
   return '';
