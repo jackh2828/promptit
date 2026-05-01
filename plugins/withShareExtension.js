@@ -389,15 +389,16 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     s.INFOPLIST_FILE = quoted(`${EXTENSION_NAME}/Info.plist`);
     s.PRODUCT_BUNDLE_IDENTIFIER = quoted(extBundleId);
     s.SKIP_INSTALL = 'YES';
-    // For app extensions, inherit signing from main app to avoid separate provisioning profile requirement
-    s.CODE_SIGN_IDENTITY = quoted('iPhone Distribution'); // use distribution cert
+    // Use the same signing configuration as the main app
     s.CODE_SIGN_STYLE = 'Automatic';
     s.DEVELOPMENT_TEAM = teamId;
-    s.PROVISIONING_PROFILE_SPECIFIER = ''; // let Xcode auto-select
     s.SWIFT_EMIT_LOC_STRINGS = 'YES';
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
+    // Remove conflicting settings that prevent automatic signing
     delete s.CODE_SIGN_ENTITLEMENTS;
+    delete s.CODE_SIGN_IDENTITY;
+    delete s.PROVISIONING_PROFILE_SPECIFIER;
   }
 
   // ── Find the main app target reliably ─────────────────────────────────────
