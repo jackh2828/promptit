@@ -11,7 +11,8 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jackhenick.promptit",
-      "buildNumber": "8",
+      "buildNumber": "9",
+      "appleTeamId": "S7827V325R",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
