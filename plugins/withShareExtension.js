@@ -284,7 +284,7 @@ function findMainAppTarget(project, extensionTargetUuid) {
   return project.getFirstTarget();
 }
 
-function addShareExtensionToProject(project, bundleId) {
+function addShareExtensionToProject(project, bundleId, teamId) {
   // Guard: idempotent — skip if the extension target was already added.
   const nativeTargets = project.pbxNativeTargetSection();
   const alreadyExists = Object.values(nativeTargets).some(
@@ -390,14 +390,11 @@ function addShareExtensionToProject(project, bundleId) {
     s.PRODUCT_BUNDLE_IDENTIFIER = quoted(extBundleId);
     s.SKIP_INSTALL = 'YES';
     s.CODE_SIGN_STYLE = quoted('Automatic');
+    s.DEVELOPMENT_TEAM = teamId; // required for EAS automatic signing
     s.SWIFT_EMIT_LOC_STRINGS = 'YES';
-    // Extensions must not embed Swift stdlib — the main app already does it.
-    // Embedding in both causes binary size bloat and potential signing errors.
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
-    // Compile-time check: catch any accidental use of non-extension-safe APIs
-    // (e.g. UIApplication.shared). Our extension only uses UIKit + extensionContext.
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
-    delete s.CODE_SIGN_ENTITLEMENTS; // extension needs no special entitlements
+    delete s.CODE_SIGN_ENTITLEMENTS;
   }
 
   // ── Find the main app target reliably ─────────────────────────────────────
@@ -431,27 +428,36 @@ function addShareExtensionToProject(project, bundleId) {
   buildFiles[`${buildFileUuid}_comment`] = buildFileComment;
 
   // ── Create "Embed App Extensions" PBXCopyFilesBuildPhase ─────────────────
-  // dstSubfolderSpec 13 = PlugIns (the slot Xcode uses for app extensions)
-  const embedPhaseUuid = generateUUID();
+  // dstSubfolderSpec 13 = PlugIns (the slot Xcode uses for app extensions).
+  // Guard against duplicates in case addTarget already created an embed phase.
   const embedPhaseComment = 'Embed App Extensions';
   const copyFilesPhases = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
   project.hash.project.objects['PBXCopyFilesBuildPhase'] = copyFilesPhases;
-
-  copyFilesPhases[embedPhaseUuid] = {
-    isa: 'PBXCopyFilesBuildPhase',
-    buildActionMask: 2147483647,
-    dstPath: quoted(''),
-    dstSubfolderSpec: 13,
-    files: [{ value: buildFileUuid, comment: buildFileComment }],
-    name: quoted(embedPhaseComment),
-    runOnlyForDeploymentPostprocessing: 0,
-  };
-  copyFilesPhases[`${embedPhaseUuid}_comment`] = embedPhaseComment;
-
-  // Attach embed phase to the main app target
   const mainTargetObj = project.pbxNativeTargetSection()[mainTarget.uuid];
-  if (mainTargetObj && Array.isArray(mainTargetObj.buildPhases)) {
-    mainTargetObj.buildPhases.push({ value: embedPhaseUuid, comment: embedPhaseComment });
+
+  const alreadyEmbedded = mainTargetObj?.buildPhases?.some((phase) => {
+    const phaseObj = copyFilesPhases[phase.value];
+    return (
+      phaseObj?.dstSubfolderSpec === 13 &&
+      phaseObj?.files?.some((f) => f.comment?.includes(EXTENSION_NAME))
+    );
+  }) ?? false;
+
+  if (!alreadyEmbedded) {
+    const embedPhaseUuid = generateUUID();
+    copyFilesPhases[embedPhaseUuid] = {
+      isa: 'PBXCopyFilesBuildPhase',
+      buildActionMask: 2147483647,
+      dstPath: quoted(''),
+      dstSubfolderSpec: 13,
+      files: [{ value: buildFileUuid, comment: buildFileComment }],
+      name: quoted(embedPhaseComment),
+      runOnlyForDeploymentPostprocessing: 0,
+    };
+    copyFilesPhases[`${embedPhaseUuid}_comment`] = embedPhaseComment;
+    if (mainTargetObj && Array.isArray(mainTargetObj.buildPhases)) {
+      mainTargetObj.buildPhases.push({ value: embedPhaseUuid, comment: embedPhaseComment });
+    }
   }
 
   // ── Make the extension a build dependency of the main target ─────────────
@@ -505,7 +511,11 @@ module.exports = function withShareExtension(config) {
       cfg.ios?.bundleIdentifier ??
       cfg.modRequest?.config?.ios?.bundleIdentifier ??
       'com.jackhenick.promptit';
-    addShareExtensionToProject(cfg.modResults, bundleId);
+    const teamId =
+      cfg.ios?.appleTeamId ??
+      cfg.modRequest?.config?.ios?.appleTeamId ??
+      'S7827V325R';
+    addShareExtensionToProject(cfg.modResults, bundleId, teamId);
     return cfg;
   });
 
