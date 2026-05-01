@@ -389,8 +389,9 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     s.INFOPLIST_FILE = quoted(`${EXTENSION_NAME}/Info.plist`);
     s.PRODUCT_BUNDLE_IDENTIFIER = quoted(extBundleId);
     s.SKIP_INSTALL = 'YES';
-    s.CODE_SIGN_STYLE = quoted('Automatic');
+    s.CODE_SIGN_STYLE = 'Automatic'; // unquoted for EAS to process
     s.DEVELOPMENT_TEAM = teamId; // required for EAS automatic signing
+    s.PROVISIONING_PROFILE_SPECIFIER = ''; // allow EAS to manage provisioning
     s.SWIFT_EMIT_LOC_STRINGS = 'YES';
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
