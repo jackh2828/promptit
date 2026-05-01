@@ -389,13 +389,15 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     s.INFOPLIST_FILE = quoted(`${EXTENSION_NAME}/Info.plist`);
     s.PRODUCT_BUNDLE_IDENTIFIER = quoted(extBundleId);
     s.SKIP_INSTALL = 'YES';
-    // Disable code signing for extension - main app will handle signing when embedding
-    s.CODE_SIGN_IDENTITY = quoted('-');
-    s.PROVISIONING_PROFILE_SPECIFIER = quoted('');
     s.SWIFT_EMIT_LOC_STRINGS = 'YES';
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
+    // Remove all signing settings - let main app handle signing
+    delete s.CODE_SIGN_IDENTITY;
+    delete s.PROVISIONING_PROFILE_SPECIFIER;
     delete s.CODE_SIGN_ENTITLEMENTS;
+    delete s.CODE_SIGN_STYLE;
+    delete s.DEVELOPMENT_TEAM;
   }
 
   // ── Find the main app target reliably ─────────────────────────────────────
