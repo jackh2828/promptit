@@ -309,23 +309,48 @@ function addShareExtensionToProject(project, bundleId) {
   }
 
   // ── Locate the PBXGroup that addTarget created ────────────────────────────
+  // addTarget may store the name with or without surrounding quotes depending
+  // on the version of the xcode package, so check both forms.
   const pbxGroups = project.hash.project.objects['PBXGroup'] || {};
   let extGroupKey = null;
   for (const [key, group] of Object.entries(pbxGroups)) {
     if (key.endsWith('_comment') || typeof group !== 'object') continue;
-    if (group.name === EXTENSION_NAME || group.path === EXTENSION_NAME) {
+    const name = group.name || group.path || '';
+    if (
+      name === EXTENSION_NAME ||
+      name === `"${EXTENSION_NAME}"`
+    ) {
       extGroupKey = key;
       break;
     }
   }
 
+  // If addTarget didn't create a group (varies by xcode package version),
+  // create one manually and attach it to the project's main group so that
+  // addSourceFile always receives a valid group key and never hits a null path.
+  if (!extGroupKey) {
+    extGroupKey = generateUUID();
+    pbxGroups[extGroupKey] = {
+      isa: 'PBXGroup',
+      children: [],
+      name: `"${EXTENSION_NAME}"`,
+      sourceTree: '"<group>"',
+    };
+    pbxGroups[`${extGroupKey}_comment`] = EXTENSION_NAME;
+    const projectSection = project.hash.project.objects['PBXProject'] || {};
+    const projectKey = Object.keys(projectSection).find(k => !k.endsWith('_comment'));
+    if (projectKey) {
+      const mainGroupKey = projectSection[projectKey].mainGroup;
+      if (mainGroupKey && pbxGroups[mainGroupKey]) {
+        if (!Array.isArray(pbxGroups[mainGroupKey].children)) pbxGroups[mainGroupKey].children = [];
+        pbxGroups[mainGroupKey].children.push({ value: extGroupKey, comment: EXTENSION_NAME });
+      }
+    }
+  }
+
   // ── Add ShareViewController.swift to the Sources build phase ─────────────
   const swiftOpts = { target: extTarget.uuid, lastKnownFileType: 'sourcecode.swift' };
-  if (extGroupKey) {
-    project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts, extGroupKey);
-  } else {
-    project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts);
-  }
+  project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts, extGroupKey);
 
   // ── Add Info.plist as a file reference in the group ONLY ─────────────────
   // Do NOT use addResourceFile — for app extensions, Info.plist is processed
