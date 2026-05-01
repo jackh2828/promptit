@@ -1,4 +1,5 @@
-﻿import { useState } from 'react';
+﻿import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +14,7 @@ import {
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -100,6 +102,10 @@ export default function LoginScreen() {
             </Text>
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.push('/privacy')} style={styles.privacyLink}>
+          <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -169,5 +175,13 @@ const styles = StyleSheet.create({
   toggleLink: {
     color: '#7C6FFF',
     fontWeight: '600',
+  },
+  privacyLink: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  privacyLinkText: {
+    color: '#4A4A5A',
+    fontSize: 12,
   },
 });
