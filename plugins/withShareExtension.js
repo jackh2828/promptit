@@ -509,5 +509,34 @@ module.exports = function withShareExtension(config) {
     return cfg;
   });
 
+  // Phase 3 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement)
+  config = withDangerousMod(config, [
+    'ios',
+    (cfg) => {
+      const teamId =
+        cfg.ios?.appleTeamId ??
+        cfg.modRequest?.config?.ios?.appleTeamId ??
+        'S7827V325R';
+      const podfilePath = path.join(cfg.modRequest.platformProjectRoot, 'Podfile');
+      if (!fs.existsSync(podfilePath)) return cfg;
+      let podfile = fs.readFileSync(podfilePath, 'utf8');
+      if (podfile.includes('RESOURCE_BUNDLE_SIGNING_FIX')) return cfg; // idempotent
+      const hook = `
+# RESOURCE_BUNDLE_SIGNING_FIX — required for Xcode 14+ resource bundle signing
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['DEVELOPMENT_TEAM'] = '${teamId}'
+      config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+    end
+  end
+end
+`;
+      podfile = podfile + hook;
+      fs.writeFileSync(podfilePath, podfile, 'utf8');
+      return cfg;
+    },
+  ]);
+
   return config;
 };
