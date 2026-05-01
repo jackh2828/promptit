@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jackhenick.promptit",
-      "buildNumber": "1",
+      "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -41,6 +41,14 @@
           "backgroundColor": "#0F0F1A",
           "dark": {
             "backgroundColor": "#0F0F1A"
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "developmentTeam": "S7827V325R"
           }
         }
       ]
