@@ -509,7 +509,9 @@ module.exports = function withShareExtension(config) {
     return cfg;
   });
 
-  // Phase 3 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement)
+  // Phase 3 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement).
+  // CocoaPods allows only ONE post_install block, so inject inside the existing one
+  // rather than appending a second block.
   config = withDangerousMod(config, [
     'ios',
     (cfg) => {
@@ -521,18 +523,22 @@ module.exports = function withShareExtension(config) {
       if (!fs.existsSync(podfilePath)) return cfg;
       let podfile = fs.readFileSync(podfilePath, 'utf8');
       if (podfile.includes('RESOURCE_BUNDLE_SIGNING_FIX')) return cfg; // idempotent
-      const hook = `
-# RESOURCE_BUNDLE_SIGNING_FIX — required for Xcode 14+ resource bundle signing
-post_install do |installer|
+      const injection = `  # RESOURCE_BUNDLE_SIGNING_FIX — Xcode 14+ requires every resource bundle target to have a team
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['DEVELOPMENT_TEAM'] = '${teamId}'
       config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
     end
-  end
-end
-`;
-      podfile = podfile + hook;
+  end\n`;
+      if (podfile.includes('post_install do |installer|')) {
+        // Inject at the top of the existing block so RN post-install hooks still run
+        podfile = podfile.replace(
+          'post_install do |installer|\n',
+          `post_install do |installer|\n${injection}`
+        );
+      } else {
+        podfile += `\npost_install do |installer|\n${injection}end\n`;
+      }
       fs.writeFileSync(podfilePath, podfile, 'utf8');
       return cfg;
     },
