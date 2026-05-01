@@ -379,8 +379,14 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     if (typeof buildConfig !== 'object' || !buildConfig.buildSettings) continue;
     const s = buildConfig.buildSettings;
 
+    // Match by PRODUCT_NAME OR PRODUCT_BUNDLE_IDENTIFIER — addTarget() may set
+    // PRODUCT_NAME = $(TARGET_NAME) rather than the literal string depending on
+    // xcode package version, so bundle ID is the reliable fallback.
     const isExtConfig =
-      s.PRODUCT_NAME === quoted(EXTENSION_NAME) || s.PRODUCT_NAME === EXTENSION_NAME;
+      s.PRODUCT_NAME === quoted(EXTENSION_NAME) ||
+      s.PRODUCT_NAME === EXTENSION_NAME ||
+      s.PRODUCT_BUNDLE_IDENTIFIER === quoted(extBundleId) ||
+      s.PRODUCT_BUNDLE_IDENTIFIER === extBundleId;
     if (!isExtConfig) continue;
 
     s.SWIFT_VERSION = quoted('5.0');
@@ -392,13 +398,11 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     s.SWIFT_EMIT_LOC_STRINGS = 'YES';
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
-    // Set team ID for resource bundle signing, but let main app handle provisioning
     s.DEVELOPMENT_TEAM = teamId;
-    // Remove other signing settings - let main app handle them
+    s.CODE_SIGN_STYLE = quoted('Automatic');
     delete s.CODE_SIGN_IDENTITY;
     delete s.PROVISIONING_PROFILE_SPECIFIER;
     delete s.CODE_SIGN_ENTITLEMENTS;
-    delete s.CODE_SIGN_STYLE;
   }
 
   // ── Find the main app target reliably ─────────────────────────────────────
