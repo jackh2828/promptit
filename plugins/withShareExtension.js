@@ -374,20 +374,26 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   }
 
   // ── Patch build settings for Debug and Release ────────────────────────────
+  // Find the extension's build configurations by following the Xcode project
+  // graph (target → configurationList → configUUIDs) rather than guessing by
+  // content. addTarget() sometimes sets PRODUCT_NAME = $(TARGET_NAME) instead
+  // of a literal string, so content-based filters silently skip the configs
+  // and PRODUCT_BUNDLE_IDENTIFIER is never set — causing the "not prefixed"
+  // Xcode validation error at archive time.
+  const extNativeTargetObj2 = project.pbxNativeTargetSection()[extTarget.uuid];
+  const extConfigListUuid = extNativeTargetObj2?.buildConfigurationList;
+  const allConfigLists = project.hash.project.objects['XCConfigurationList'] || {};
+  const extConfigList = allConfigLists[extConfigListUuid];
+  const extConfigUuids = new Set(
+    (extConfigList?.buildConfigurations || []).map((c) => c.value)
+  );
+
   const configurations = project.pbxXCBuildConfigurationSection();
-  for (const [, buildConfig] of Object.entries(configurations)) {
+  for (const [key, buildConfig] of Object.entries(configurations)) {
+    if (key.endsWith('_comment')) continue;
+    if (!extConfigUuids.has(key)) continue;
     if (typeof buildConfig !== 'object' || !buildConfig.buildSettings) continue;
     const s = buildConfig.buildSettings;
-
-    // Match by PRODUCT_NAME OR PRODUCT_BUNDLE_IDENTIFIER — addTarget() may set
-    // PRODUCT_NAME = $(TARGET_NAME) rather than the literal string depending on
-    // xcode package version, so bundle ID is the reliable fallback.
-    const isExtConfig =
-      s.PRODUCT_NAME === quoted(EXTENSION_NAME) ||
-      s.PRODUCT_NAME === EXTENSION_NAME ||
-      s.PRODUCT_BUNDLE_IDENTIFIER === quoted(extBundleId) ||
-      s.PRODUCT_BUNDLE_IDENTIFIER === extBundleId;
-    if (!isExtConfig) continue;
 
     s.SWIFT_VERSION = quoted('5.0');
     s.IPHONEOS_DEPLOYMENT_TARGET = DEPLOYMENT_TARGET;
