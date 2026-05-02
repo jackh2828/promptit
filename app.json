@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jackhenick.promptit",
-      "buildNumber": "18",
+      "buildNumber": "22",
       "appleTeamId": "S7827V325R",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -37,12 +37,8 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#0F0F1A",
-          "dark": {
-            "backgroundColor": "#0F0F1A"
-          }
+          "resizeMode": "cover",
+          "backgroundColor": "#0B0B1A"
         }
       ],
       [
@@ -55,8 +51,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "extra": {
       "router": {},
