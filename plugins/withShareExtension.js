@@ -359,8 +359,50 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   }
 
   // ── Add ShareViewController.swift to the Sources build phase ─────────────
-  const swiftOpts = { target: extTarget.uuid, lastKnownFileType: 'sourcecode.swift' };
-  project.addSourceFile(`${EXTENSION_NAME}/ShareViewController.swift`, swiftOpts, extGroupKey);
+  // Fully manual implementation — project.addSourceFile() fails silently on
+  // some xcode package versions, producing an empty .appex binary (error 90085).
+  const swiftFileRefUuid = generateUUID();
+  const swiftBuildFileUuid = generateUUID();
+
+  // PBXFileReference — the actual file on disk
+  const fileRefsSection = project.hash.project.objects['PBXFileReference'] || {};
+  project.hash.project.objects['PBXFileReference'] = fileRefsSection;
+  fileRefsSection[swiftFileRefUuid] = {
+    isa: 'PBXFileReference',
+    lastKnownFileType: 'sourcecode.swift',
+    path: '"ShareViewController.swift"',
+    sourceTree: '"<group>"',
+  };
+  fileRefsSection[`${swiftFileRefUuid}_comment`] = 'ShareViewController.swift';
+
+  // PBXBuildFile — the reference used inside build phases
+  const buildFilesSection = project.hash.project.objects['PBXBuildFile'] || {};
+  project.hash.project.objects['PBXBuildFile'] = buildFilesSection;
+  buildFilesSection[swiftBuildFileUuid] = {
+    isa: 'PBXBuildFile',
+    fileRef: swiftFileRefUuid,
+    fileRef_comment: 'ShareViewController.swift',
+  };
+  buildFilesSection[`${swiftBuildFileUuid}_comment`] = 'ShareViewController.swift in Sources';
+
+  // Add file reference to the navigator group
+  if (extGroupKey && pbxGroups[extGroupKey]) {
+    if (!Array.isArray(pbxGroups[extGroupKey].children)) pbxGroups[extGroupKey].children = [];
+    pbxGroups[extGroupKey].children.push({ value: swiftFileRefUuid, comment: 'ShareViewController.swift' });
+  }
+
+  // Find the extension target's Sources build phase and add the build file
+  const sourcesBuildPhases = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
+  const extTargetObj = project.pbxNativeTargetSection()[extTarget.uuid];
+  for (const phaseRef of (extTargetObj?.buildPhases || [])) {
+    const phaseUuid = typeof phaseRef === 'object' ? phaseRef.value : phaseRef;
+    const phase = sourcesBuildPhases[phaseUuid];
+    if (phase) {
+      if (!Array.isArray(phase.files)) phase.files = [];
+      phase.files.push({ value: swiftBuildFileUuid, comment: 'ShareViewController.swift in Sources' });
+      break;
+    }
+  }
 
   // ── Add Info.plist as a file reference in the group ONLY ─────────────────
   // Do NOT use addResourceFile — for app extensions, Info.plist is processed
