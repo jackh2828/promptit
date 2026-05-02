@@ -399,9 +399,29 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     s.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = 'NO';
     s.APPLICATION_EXTENSION_API_ONLY = 'YES';
     s.DEVELOPMENT_TEAM = teamId;
-    s.CODE_SIGN_STYLE = quoted('Automatic');
-    delete s.CODE_SIGN_IDENTITY;
-    delete s.PROVISIONING_PROFILE_SPECIFIER;
+    // EAS Build disables Xcode automatic provisioning system-wide, so we must
+    // use manual signing. The profile is provided via the SHARE_EXTENSION_PROFILE
+    // EAS file secret, which was created with EAS's own distribution certificate
+    // (serial 503C0F918B45883325EB1D9629BCA024) — confirmed to match.
+    const extProfilePath = process.env.SHARE_EXTENSION_PROFILE;
+    let extProfileUUID = null;
+    if (extProfilePath) {
+      try {
+        const profileText = fs.readFileSync(extProfilePath, 'utf8');
+        const m = profileText.match(/<key>UUID<\/key>\s*<string>([^<]+)<\/string>/);
+        extProfileUUID = m ? m[1] : null;
+      } catch (_) {}
+    }
+    if (extProfileUUID) {
+      s.CODE_SIGN_STYLE = quoted('Manual');
+      s.PROVISIONING_PROFILE_SPECIFIER = quoted(extProfileUUID);
+      s.CODE_SIGN_IDENTITY = quoted('Apple Distribution');
+    } else {
+      // Local dev fallback — no secret configured, let Xcode use automatic.
+      s.CODE_SIGN_STYLE = quoted('Automatic');
+      delete s.PROVISIONING_PROFILE_SPECIFIER;
+      delete s.CODE_SIGN_IDENTITY;
+    }
     delete s.CODE_SIGN_ENTITLEMENTS;
   }
 
@@ -527,7 +547,32 @@ module.exports = function withShareExtension(config) {
     return cfg;
   });
 
-  // Phase 3 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement).
+  // Phase 3 – install the ShareExtension provisioning profile on EAS build servers.
+  // The profile is stored as an EAS file secret (SHARE_EXTENSION_PROFILE). EAS writes
+  // the file to a temp path before running prebuild. We copy it into the standard
+  // provisioning profiles directory so Xcode can find it by UUID.
+  config = withDangerousMod(config, [
+    'ios',
+    (cfg) => {
+      const profilePath = process.env.SHARE_EXTENSION_PROFILE;
+      if (!profilePath) return cfg;
+      try {
+        const os = require('os');
+        const profileData = fs.readFileSync(profilePath);
+        const profileText = profileData.toString('utf8');
+        const m = profileText.match(/<key>UUID<\/key>\s*<string>([^<]+)<\/string>/);
+        const uuid = m ? m[1] : null;
+        if (uuid) {
+          const profileDir = path.join(os.homedir(), 'Library', 'MobileDevice', 'Provisioning Profiles');
+          fs.mkdirSync(profileDir, { recursive: true });
+          fs.writeFileSync(path.join(profileDir, `${uuid}.mobileprovision`), profileData);
+        }
+      } catch (_) {}
+      return cfg;
+    },
+  ]);
+
+  // Phase 4 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement).
   // CocoaPods allows only ONE post_install block, so inject inside the existing one
   // rather than appending a second block.
   config = withDangerousMod(config, [
