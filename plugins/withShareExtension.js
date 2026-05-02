@@ -222,6 +222,8 @@ const INFO_PLIST = `\
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+\t<key>CFBundleIdentifier</key>
+\t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 \t<key>NSExtension</key>
 \t<dict>
 \t\t<key>NSExtensionAttributes</key>
@@ -293,6 +295,14 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   if (alreadyExists) return;
 
   const extBundleId = `${bundleId}.ShareExtension`;
+
+  // Snapshot all existing XCBuildConfiguration keys BEFORE addTarget runs.
+  // Any keys that appear after addTarget must belong to the extension target.
+  // This is more reliable than the UUID graph traversal, which breaks when
+  // the xcode package stores buildConfigurationList with an inline comment.
+  const configKeysBefore = new Set(
+    Object.keys(project.pbxXCBuildConfigurationSection())
+  );
 
   // addTarget creates: PBXNativeTarget, PBXBuildConfiguration (Debug + Release),
   // PBXXCConfigurationList, empty build phases (Sources, Resources, Frameworks),
@@ -374,24 +384,12 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   }
 
   // ── Patch build settings for Debug and Release ────────────────────────────
-  // Find the extension's build configurations by following the Xcode project
-  // graph (target → configurationList → configUUIDs) rather than guessing by
-  // content. addTarget() sometimes sets PRODUCT_NAME = $(TARGET_NAME) instead
-  // of a literal string, so content-based filters silently skip the configs
-  // and PRODUCT_BUNDLE_IDENTIFIER is never set — causing the "not prefixed"
-  // Xcode validation error at archive time.
-  const extNativeTargetObj2 = project.pbxNativeTargetSection()[extTarget.uuid];
-  const extConfigListUuid = extNativeTargetObj2?.buildConfigurationList;
-  const allConfigLists = project.hash.project.objects['XCConfigurationList'] || {};
-  const extConfigList = allConfigLists[extConfigListUuid];
-  const extConfigUuids = new Set(
-    (extConfigList?.buildConfigurations || []).map((c) => c.value)
-  );
-
+  // Use the pre/post snapshot diff: any XCBuildConfiguration key that exists
+  // now but didn't exist before addTarget() belongs to the extension target.
   const configurations = project.pbxXCBuildConfigurationSection();
   for (const [key, buildConfig] of Object.entries(configurations)) {
+    if (configKeysBefore.has(key)) continue; // existed before — skip
     if (key.endsWith('_comment')) continue;
-    if (!extConfigUuids.has(key)) continue;
     if (typeof buildConfig !== 'object' || !buildConfig.buildSettings) continue;
     const s = buildConfig.buildSettings;
 
