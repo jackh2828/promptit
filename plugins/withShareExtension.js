@@ -331,6 +331,8 @@ function addShareExtensionToProject(project, bundleId, teamId) {
       name === `"${EXTENSION_NAME}"`
     ) {
       extGroupKey = key;
+      // Ensure the group has a path so files resolve to ios/ShareExtension/
+      if (!group.path) group.path = `"${EXTENSION_NAME}"`;
       break;
     }
   }
@@ -344,6 +346,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
       isa: 'PBXGroup',
       children: [],
       name: `"${EXTENSION_NAME}"`,
+      path: `"${EXTENSION_NAME}"`,
       sourceTree: '"<group>"',
     };
     pbxGroups[`${extGroupKey}_comment`] = EXTENSION_NAME;
