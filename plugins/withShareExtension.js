@@ -304,6 +304,12 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     Object.keys(project.pbxXCBuildConfigurationSection())
   );
 
+  // Same snapshot for PBXSourcesBuildPhase — addTarget adds a new Sources phase
+  // for the extension; any key that appears after addTarget is that phase.
+  const sourcePhasesKeysBefore = new Set(
+    Object.keys(project.hash.project.objects['PBXSourcesBuildPhase'] || {})
+  );
+
   // addTarget creates: PBXNativeTarget, PBXBuildConfiguration (Debug + Release),
   // PBXXCConfigurationList, empty build phases (Sources, Resources, Frameworks),
   // a PBXGroup, and a product PBXFileReference for the .appex product.
@@ -391,17 +397,18 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     pbxGroups[extGroupKey].children.push({ value: swiftFileRefUuid, comment: 'ShareViewController.swift' });
   }
 
-  // Find the extension target's Sources build phase and add the build file
-  const sourcesBuildPhases = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
-  const extTargetObj = project.pbxNativeTargetSection()[extTarget.uuid];
-  for (const phaseRef of (extTargetObj?.buildPhases || [])) {
-    const phaseUuid = typeof phaseRef === 'object' ? phaseRef.value : phaseRef;
-    const phase = sourcesBuildPhases[phaseUuid];
-    if (phase) {
-      if (!Array.isArray(phase.files)) phase.files = [];
-      phase.files.push({ value: swiftBuildFileUuid, comment: 'ShareViewController.swift in Sources' });
-      break;
-    }
+  // Use the pre/post snapshot diff to find the Sources build phase that
+  // addTarget just created for the extension. Any key in PBXSourcesBuildPhase
+  // that didn't exist before addTarget() belongs to the extension target.
+  const allSourcePhases = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
+  project.hash.project.objects['PBXSourcesBuildPhase'] = allSourcePhases;
+  for (const [key, phase] of Object.entries(allSourcePhases)) {
+    if (sourcePhasesKeysBefore.has(key)) continue; // existed before — skip
+    if (key.endsWith('_comment')) continue;
+    if (typeof phase !== 'object' || phase === null) continue;
+    if (!Array.isArray(phase.files)) phase.files = [];
+    phase.files.push({ value: swiftBuildFileUuid, comment: 'ShareViewController.swift in Sources' });
+    break;
   }
 
   // ── Add Info.plist as a file reference in the group ONLY ─────────────────
