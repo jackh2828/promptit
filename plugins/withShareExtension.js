@@ -1,11 +1,11 @@
-/**
- * Expo config plugin — iOS Share Extension
+﻿/**
+ * Expo config plugin â€” iOS Share Extension
  *
  * Wires a native Share Extension target into the managed-workflow Xcode project
- * so users can tap Share → PromptIt in TikTok / Instagram / etc.
+ * so users can tap Share â†’ PromptIt in TikTok / Instagram / etc.
  *
- * Flow: extension captures URL → validates it → opens promptit://share?url=<encoded>
- *       → main app's Linking listener navigates to the Save tab with URL pre-filled.
+ * Flow: extension captures URL â†’ validates it â†’ opens promptit://share?url=<encoded>
+ *       â†’ main app's Linking listener navigates to the Save tab with URL pre-filled.
  *
  * Runs automatically during: expo prebuild  |  eas build
  */
@@ -15,12 +15,12 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const EXTENSION_NAME = 'ShareExtension';
 const DEPLOYMENT_TARGET = '16.0';
 
-// ─── Embedded Swift source ───────────────────────────────────────────────────
+// â”€â”€â”€ Embedded Swift source â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Kept in sync with ios/ShareExtension/ShareViewController.swift.
 // Embedded here so EAS Build can recreate the file without needing the
 // gitignored ios/ directory to be committed.
@@ -45,7 +45,7 @@ class ShareViewController: UIViewController {
         extractURL()
     }
 
-    // MARK: – UI
+    // MARK: â€“ UI
 
     private func setupUI() {
         view.backgroundColor = UIColor(red: 0.031, green: 0.031, blue: 0.059, alpha: 0.95)
@@ -61,7 +61,7 @@ class ShareViewController: UIViewController {
         spinner.startAnimating()
 
         let label = UILabel()
-        label.text = "Opening PromptIt…"
+        label.text = "Opening PromptItâ€¦"
         label.textColor = UIColor(red: 0.94, green: 0.93, blue: 1.0, alpha: 1)
         label.font = .systemFont(ofSize: 16, weight: .semibold)
 
@@ -75,9 +75,9 @@ class ShareViewController: UIViewController {
         ])
     }
 
-    // MARK: – Timeout
+    // MARK: â€“ Timeout
 
-    // If the item provider hangs the extension will never appear frozen — it
+    // If the item provider hangs the extension will never appear frozen â€” it
     // auto-cancels after 8 seconds with a clean error.
     private func startTimeout() {
         let item = DispatchWorkItem { [weak self] in
@@ -92,7 +92,7 @@ class ShareViewController: UIViewController {
         timeoutWorkItem = nil
     }
 
-    // MARK: – URL extraction
+    // MARK: â€“ URL extraction
 
     private func extractURL() {
         guard
@@ -150,10 +150,10 @@ class ShareViewController: UIViewController {
         }
     }
 
-    // MARK: – Open main app
+    // MARK: â€“ Open main app
 
     private func openInApp(urlString: String) {
-        // Validate before forwarding — prevents captions / hashtags / garbage text
+        // Validate before forwarding â€” prevents captions / hashtags / garbage text
         // from reaching the edge function.
         guard
             let parsed = URL(string: urlString),
@@ -189,13 +189,13 @@ class ShareViewController: UIViewController {
             if success {
                 self.finish()
             } else {
-                // Returned false — URL scheme not registered (app deleted / bundle ID changed).
+                // Returned false â€” URL scheme not registered (app deleted / bundle ID changed).
                 self.completeWithError(code: -5, message: "PromptIt could not be opened.")
             }
         }
     }
 
-    // MARK: – Completion helpers
+    // MARK: â€“ Completion helpers
 
     private func finish() {
         guard !didComplete else { return }
@@ -233,9 +233,9 @@ const INFO_PLIST = `\
 \t<key>CFBundlePackageType</key>
 \t<string>XPC!</string>
 \t<key>CFBundleShortVersionString</key>
-\t<string>1.0</string>
+\t<string>$(MARKETING_VERSION)</string>
 \t<key>CFBundleVersion</key>
-\t<string>1</string>
+\t<string>$(CURRENT_PROJECT_VERSION)</string>
 \t<key>NSExtension</key>
 \t<dict>
 \t\t<key>NSExtensionAttributes</key>
@@ -255,7 +255,7 @@ const INFO_PLIST = `\
 </plist>
 `;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Cryptographically random 24-char uppercase hex string matching the Xcode
 // UUID format. Math.random() would be fine in practice but crypto eliminates
@@ -268,7 +268,7 @@ function quoted(str) {
   return `"${str}"`;
 }
 
-// ─── Step 1: Write extension source files during prebuild ─────────────────────
+// â”€â”€â”€ Step 1: Write extension source files during prebuild â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function writeExtensionFiles(projectRoot) {
   const dir = path.join(projectRoot, 'ios', EXTENSION_NAME);
@@ -277,7 +277,7 @@ function writeExtensionFiles(projectRoot) {
   fs.writeFileSync(path.join(dir, 'Info.plist'), INFO_PLIST, 'utf8');
 }
 
-// ─── Step 2: Add extension target to the Xcode project ───────────────────────
+// â”€â”€â”€ Step 2: Add extension target to the Xcode project â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Find the main application target reliably by product type rather than by
 // dict-key order (getFirstTarget() is order-dependent and fragile).
@@ -299,7 +299,7 @@ function findMainAppTarget(project, extensionTargetUuid) {
 }
 
 function addShareExtensionToProject(project, bundleId, teamId) {
-  // Guard: idempotent — skip if the extension target was already added.
+  // Guard: idempotent â€” skip if the extension target was already added.
   const nativeTargets = project.pbxNativeTargetSection();
   const alreadyExists = Object.values(nativeTargets).some(
     (t) => typeof t === 'object' && t.name === EXTENSION_NAME
@@ -330,7 +330,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     throw new Error('[withShareExtension] addTarget() did not return a valid target.');
   }
 
-  // ── Locate the PBXGroup that addTarget created ────────────────────────────
+  // â”€â”€ Locate the PBXGroup that addTarget created â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // addTarget may store the name with or without surrounding quotes depending
   // on the version of the xcode package, so check both forms.
   const pbxGroups = project.hash.project.objects['PBXGroup'] || {};
@@ -373,13 +373,13 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     }
   }
 
-  // ── Add ShareViewController.swift to the Sources build phase ─────────────
-  // Fully manual implementation — project.addSourceFile() fails silently on
+  // â”€â”€ Add ShareViewController.swift to the Sources build phase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Fully manual implementation â€” project.addSourceFile() fails silently on
   // some xcode package versions, producing an empty .appex binary (error 90085).
   const swiftFileRefUuid = generateUUID();
   const swiftBuildFileUuid = generateUUID();
 
-  // PBXFileReference — the actual file on disk
+  // PBXFileReference â€” the actual file on disk
   const fileRefsSection = project.hash.project.objects['PBXFileReference'] || {};
   project.hash.project.objects['PBXFileReference'] = fileRefsSection;
   fileRefsSection[swiftFileRefUuid] = {
@@ -390,7 +390,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   };
   fileRefsSection[`${swiftFileRefUuid}_comment`] = 'ShareViewController.swift';
 
-  // PBXBuildFile — the reference used inside build phases
+  // PBXBuildFile â€” the reference used inside build phases
   const buildFilesSection = project.hash.project.objects['PBXBuildFile'] || {};
   project.hash.project.objects['PBXBuildFile'] = buildFilesSection;
   buildFilesSection[swiftBuildFileUuid] = {
@@ -406,7 +406,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     pbxGroups[extGroupKey].children.push({ value: swiftFileRefUuid, comment: 'ShareViewController.swift' });
   }
 
-  // addTarget() creates the extension with buildPhases: [] — it does NOT create
+  // addTarget() creates the extension with buildPhases: [] â€” it does NOT create
   // Sources or Frameworks phases for app_extension targets (confirmed by reading
   // xcode@3.0.1 source: only a CopyFiles phase is added to the MAIN target).
   // We must create both phases manually and attach them to the extension target.
@@ -446,8 +446,8 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     );
   }
 
-  // ── Add Info.plist as a file reference in the group ONLY ─────────────────
-  // Do NOT use addResourceFile — for app extensions, Info.plist is processed
+  // â”€â”€ Add Info.plist as a file reference in the group ONLY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Do NOT use addResourceFile â€” for app extensions, Info.plist is processed
   // at build time via the INFOPLIST_FILE build setting, not via Copy Bundle
   // Resources. Adding it as a resource creates a duplicate processing step
   // that Xcode warns about.
@@ -467,12 +467,12 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     group.children.push({ value: plistRefUuid, comment: 'Info.plist' });
   }
 
-  // ── Patch build settings for Debug and Release ────────────────────────────
+  // â”€â”€ Patch build settings for Debug and Release â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Use the pre/post snapshot diff: any XCBuildConfiguration key that exists
   // now but didn't exist before addTarget() belongs to the extension target.
   const configurations = project.pbxXCBuildConfigurationSection();
   for (const [key, buildConfig] of Object.entries(configurations)) {
-    if (configKeysBefore.has(key)) continue; // existed before — skip
+    if (configKeysBefore.has(key)) continue; // existed before â€” skip
     if (key.endsWith('_comment')) continue;
     if (typeof buildConfig !== 'object' || !buildConfig.buildSettings) continue;
     const s = buildConfig.buildSettings;
@@ -490,7 +490,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     // EAS Build disables Xcode automatic provisioning system-wide, so we must
     // use manual signing. The profile is provided via the SHARE_EXTENSION_PROFILE
     // EAS file secret, which was created with EAS's own distribution certificate
-    // (serial 503C0F918B45883325EB1D9629BCA024) — confirmed to match.
+    // (serial 503C0F918B45883325EB1D9629BCA024) â€” confirmed to match.
     const extProfilePath = process.env.SHARE_EXTENSION_PROFILE;
     let extProfileUUID = null;
     if (extProfilePath) {
@@ -505,7 +505,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
       s.PROVISIONING_PROFILE_SPECIFIER = quoted(extProfileUUID);
       s.CODE_SIGN_IDENTITY = quoted('Apple Distribution');
     } else {
-      // Local dev fallback — no secret configured, let Xcode use automatic.
+      // Local dev fallback â€” no secret configured, let Xcode use automatic.
       s.CODE_SIGN_STYLE = quoted('Automatic');
       delete s.PROVISIONING_PROFILE_SPECIFIER;
       delete s.CODE_SIGN_IDENTITY;
@@ -513,20 +513,20 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     delete s.CODE_SIGN_ENTITLEMENTS;
   }
 
-  // ── Find the main app target reliably ─────────────────────────────────────
+  // â”€â”€ Find the main app target reliably â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const mainTarget = findMainAppTarget(project, extTarget.uuid);
   if (!mainTarget?.uuid) {
     throw new Error('[withShareExtension] Could not find the main application target.');
   }
 
-  // ── Retrieve the extension product file reference (.appex) ───────────────
+  // â”€â”€ Retrieve the extension product file reference (.appex) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const extNativeTargetObj = project.pbxNativeTargetSection()[extTarget.uuid];
   const extProductRefUuid = extNativeTargetObj?.productReference;
   if (!extProductRefUuid) {
     throw new Error('[withShareExtension] Extension target has no productReference.');
   }
 
-  // ── Create PBXBuildFile pointing to the .appex product ───────────────────
+  // â”€â”€ Create PBXBuildFile pointing to the .appex product â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const buildFileUuid = generateUUID();
   const buildFileComment = `${EXTENSION_NAME}.appex in Embed App Extensions`;
   // Guard: PBXBuildFile section should always exist in a valid Expo project,
@@ -543,7 +543,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   };
   buildFiles[`${buildFileUuid}_comment`] = buildFileComment;
 
-  // ── Create "Embed App Extensions" PBXCopyFilesBuildPhase ─────────────────
+  // â”€â”€ Create "Embed App Extensions" PBXCopyFilesBuildPhase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // dstSubfolderSpec 13 = PlugIns (the slot Xcode uses for app extensions).
   // Guard against duplicates in case addTarget already created an embed phase.
   const embedPhaseComment = 'Embed App Extensions';
@@ -576,7 +576,7 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     }
   }
 
-  // ── Make the extension a build dependency of the main target ─────────────
+  // â”€â”€ Make the extension a build dependency of the main target â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Ensures the extension is compiled before the main app links.
   const dependencyUuid = generateUUID();
   const proxyUuid = generateUUID();
@@ -609,10 +609,10 @@ function addShareExtensionToProject(project, bundleId, teamId) {
   }
 }
 
-// ─── Plugin export ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Plugin export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 module.exports = function withShareExtension(config) {
-  // Phase 1 – write Swift + plist files into ios/ShareExtension/
+  // Phase 1 â€“ write Swift + plist files into ios/ShareExtension/
   config = withDangerousMod(config, [
     'ios',
     (cfg) => {
@@ -621,7 +621,7 @@ module.exports = function withShareExtension(config) {
     },
   ]);
 
-  // Phase 2 – modify the generated Xcode project
+  // Phase 2 â€“ modify the generated Xcode project
   config = withXcodeProject(config, (cfg) => {
     const bundleId =
       cfg.ios?.bundleIdentifier ??
@@ -635,7 +635,7 @@ module.exports = function withShareExtension(config) {
     return cfg;
   });
 
-  // Phase 3 – install the ShareExtension provisioning profile on EAS build servers.
+  // Phase 3 â€“ install the ShareExtension provisioning profile on EAS build servers.
   // The profile is stored as an EAS file secret (SHARE_EXTENSION_PROFILE). EAS writes
   // the file to a temp path before running prebuild. We copy it into the standard
   // provisioning profiles directory so Xcode can find it by UUID.
@@ -660,7 +660,7 @@ module.exports = function withShareExtension(config) {
     },
   ]);
 
-  // Phase 4 – patch Podfile to sign resource bundle targets (Xcode 14+ requirement).
+  // Phase 4 â€“ patch Podfile to sign resource bundle targets (Xcode 14+ requirement).
   // CocoaPods allows only ONE post_install block, so inject inside the existing one
   // rather than appending a second block.
   config = withDangerousMod(config, [
@@ -674,7 +674,7 @@ module.exports = function withShareExtension(config) {
       if (!fs.existsSync(podfilePath)) return cfg;
       let podfile = fs.readFileSync(podfilePath, 'utf8');
       if (podfile.includes('RESOURCE_BUNDLE_SIGNING_FIX')) return cfg; // idempotent
-      const injection = `  # RESOURCE_BUNDLE_SIGNING_FIX — Xcode 14+ requires every resource bundle target to have a team
+      const injection = `  # RESOURCE_BUNDLE_SIGNING_FIX â€” Xcode 14+ requires every resource bundle target to have a team
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['DEVELOPMENT_TEAM'] = '${teamId}'
