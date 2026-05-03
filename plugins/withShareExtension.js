@@ -228,6 +228,8 @@ const INFO_PLIST = `\
 \t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 \t<key>CFBundleInfoDictionaryVersion</key>
 \t<string>6.0</string>
+\t<key>CFBundleDisplayName</key>
+\t<string>$(PRODUCT_NAME)</string>
 \t<key>CFBundleName</key>
 \t<string>$(PRODUCT_NAME)</string>
 \t<key>CFBundlePackageType</key>
