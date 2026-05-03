@@ -27,7 +27,10 @@
       "ios": {
         "appleId": "jackh2828@icloud.com",
         "ascAppId": "6765532596",
-        "appleTeamId": "S7827V325R"
+        "appleTeamId": "S7827V325R",
+        "ascApiKeyPath": "~/.expo/AuthKey_737M9VB367.p8",
+        "ascApiKeyId": "737M9VB367",
+        "ascApiKeyIssuerId": "8cdc37ca-269a-41a2-8afd-758426b98bec"
       }
     }
   }
