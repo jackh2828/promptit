@@ -222,8 +222,20 @@ const INFO_PLIST = `\
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+\t<key>CFBundleExecutable</key>
+\t<string>$(EXECUTABLE_NAME)</string>
 \t<key>CFBundleIdentifier</key>
 \t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+\t<key>CFBundleInfoDictionaryVersion</key>
+\t<string>6.0</string>
+\t<key>CFBundleName</key>
+\t<string>$(PRODUCT_NAME)</string>
+\t<key>CFBundlePackageType</key>
+\t<string>XPC!</string>
+\t<key>CFBundleShortVersionString</key>
+\t<string>1.0</string>
+\t<key>CFBundleVersion</key>
+\t<string>1</string>
 \t<key>NSExtension</key>
 \t<dict>
 \t\t<key>NSExtensionAttributes</key>
