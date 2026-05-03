@@ -304,12 +304,6 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     Object.keys(project.pbxXCBuildConfigurationSection())
   );
 
-  // Same snapshot for PBXSourcesBuildPhase — addTarget adds a new Sources phase
-  // for the extension; any key that appears after addTarget is that phase.
-  const sourcePhasesKeysBefore = new Set(
-    Object.keys(project.hash.project.objects['PBXSourcesBuildPhase'] || {})
-  );
-
   // addTarget creates: PBXNativeTarget, PBXBuildConfiguration (Debug + Release),
   // PBXXCConfigurationList, empty build phases (Sources, Resources, Frameworks),
   // a PBXGroup, and a product PBXFileReference for the .appex product.
@@ -397,18 +391,44 @@ function addShareExtensionToProject(project, bundleId, teamId) {
     pbxGroups[extGroupKey].children.push({ value: swiftFileRefUuid, comment: 'ShareViewController.swift' });
   }
 
-  // Use the pre/post snapshot diff to find the Sources build phase that
-  // addTarget just created for the extension. Any key in PBXSourcesBuildPhase
-  // that didn't exist before addTarget() belongs to the extension target.
-  const allSourcePhases = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
-  project.hash.project.objects['PBXSourcesBuildPhase'] = allSourcePhases;
-  for (const [key, phase] of Object.entries(allSourcePhases)) {
-    if (sourcePhasesKeysBefore.has(key)) continue; // existed before — skip
-    if (key.endsWith('_comment')) continue;
-    if (typeof phase !== 'object' || phase === null) continue;
-    if (!Array.isArray(phase.files)) phase.files = [];
-    phase.files.push({ value: swiftBuildFileUuid, comment: 'ShareViewController.swift in Sources' });
-    break;
+  // addTarget() creates the extension with buildPhases: [] — it does NOT create
+  // Sources or Frameworks phases for app_extension targets (confirmed by reading
+  // xcode@3.0.1 source: only a CopyFiles phase is added to the MAIN target).
+  // We must create both phases manually and attach them to the extension target.
+
+  const extSourcesPhaseUuid = generateUUID();
+  const extFrameworksPhaseUuid = generateUUID();
+
+  const sourcesPhaseSection = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
+  project.hash.project.objects['PBXSourcesBuildPhase'] = sourcesPhaseSection;
+  sourcesPhaseSection[extSourcesPhaseUuid] = {
+    isa: 'PBXSourcesBuildPhase',
+    buildActionMask: 2147483647,
+    files: [{ value: swiftBuildFileUuid, comment: 'ShareViewController.swift in Sources' }],
+    runOnlyForDeploymentPostprocessing: 0,
+  };
+  sourcesPhaseSection[`${extSourcesPhaseUuid}_comment`] = 'Sources';
+
+  const frameworksPhaseSection = project.hash.project.objects['PBXFrameworksBuildPhase'] || {};
+  project.hash.project.objects['PBXFrameworksBuildPhase'] = frameworksPhaseSection;
+  frameworksPhaseSection[extFrameworksPhaseUuid] = {
+    isa: 'PBXFrameworksBuildPhase',
+    buildActionMask: 2147483647,
+    files: [],
+    runOnlyForDeploymentPostprocessing: 0,
+  };
+  frameworksPhaseSection[`${extFrameworksPhaseUuid}_comment`] = 'Frameworks';
+
+  // Wire both phases into the extension target's buildPhases array
+  const extNativeTargetForPhases = project.pbxNativeTargetSection()[extTarget.uuid];
+  if (extNativeTargetForPhases) {
+    if (!Array.isArray(extNativeTargetForPhases.buildPhases)) extNativeTargetForPhases.buildPhases = [];
+    extNativeTargetForPhases.buildPhases.unshift(
+      { value: extFrameworksPhaseUuid, comment: 'Frameworks' },
+    );
+    extNativeTargetForPhases.buildPhases.unshift(
+      { value: extSourcesPhaseUuid, comment: 'Sources' },
+    );
   }
 
   // ── Add Info.plist as a file reference in the group ONLY ─────────────────
